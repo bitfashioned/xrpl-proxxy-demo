@@ -1,11 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 import {Xumm} from 'xumm'
 import { submitTx, waitFinalizedTx } from './utils'
+import { useProxxy } from './cmix/contexts/proxxy-context'
+import { encoder } from './cmix/utils'
+import { relayContact } from './assets/relay'
 
 const nodeUrl = process.env.REACT_APP_XRPL_URL || 'https://xrplcluster.com/'
 
 const xumm = new Xumm(process.env.REACT_APP_XUMM_API_KEY || '') // Some API Key
+
+const relay = encoder.encode(relayContact);
 
 function App() {
   const [account, setAccount] = useState('Friend')
@@ -16,6 +21,8 @@ function App() {
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState('unknown')
   const [finalized, setFinalized] = useState(false)
+  const { connect, supportedNetworks, request } = useProxxy();
+  const [networks, setNetworks] = useState<string[]>([]);
 
   xumm.user.account.then(a => setAccount(a ?? ''))
   xumm.environment.jwt?.then(j => setAppName(j?.app_name ?? ''))
@@ -24,6 +31,20 @@ function App() {
     xumm.logout()
     setAccount('Friend')
   }
+
+  useEffect( () => {
+    async function initProxxy() {
+        // Connect to proxxy
+        console.log('Proxxy: Connecting...');
+        await connect(relay);
+        console.log('Proxxy: Connected!');
+        // Get networks
+        const nets = supportedNetworks();
+        console.log('Proxxy: Networks', nets);
+        setNetworks(nets);
+    }
+    initProxxy();
+  }, [])
 
   const createPayload = async () => {
     const payload = await xumm.payload?.createAndSubscribe({
@@ -89,6 +110,14 @@ function App() {
             <button onClick={createPayload}>Make a payment</button>
             &nbsp;- or -&nbsp;
             <button onClick={logout}>Sign Out</button>
+          </>
+        }
+      </div>
+      <div>
+        {networks &&
+          <>
+          <br/>
+            {networks}
           </>
         }
       </div>
