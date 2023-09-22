@@ -3,10 +3,14 @@ import type { CMix, E2E, CMixParams } from "../types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useUtils } from "../contexts/utils-context";
 import { encoder, decoder } from "../utils";
-import { FOLLOWER_TIMEOUT_PERIOD, STATE_PATH } from "../constants";
+import {
+  CMIX_INITIALIZATION_KEY,
+  FOLLOWER_TIMEOUT_PERIOD,
+  STATE_PATH,
+} from "../constants";
 import { ndf } from "../ndf";
 import useTrackNetworkPeriod from "./useNetworkTrackPeriod";
-import { useAuthentication } from "../contexts/authentication-context";
+import useLocalStorage from "./useLocalStorage";
 
 export enum NetworkStatus {
   UNINITIALIZED = "uninitialized",
@@ -17,7 +21,8 @@ export enum NetworkStatus {
 }
 
 const useCmix = () => {
-  const { cmixPreviouslyInitialized } = useAuthentication();
+  const [cmixPreviouslyInitialized, setCmixPreviouslyInitialized] =
+    useLocalStorage(CMIX_INITIALIZATION_KEY, false);
   const [status, setStatus] = useState<NetworkStatus>(
     NetworkStatus.UNINITIALIZED
   );
@@ -38,11 +43,9 @@ const useCmix = () => {
 
   const initializeCmix = useCallback(
     async (password: Uint8Array) => {
-      if (!cmixPreviouslyInitialized) {
-        await utils.NewCmix(ndf, STATE_PATH, password, "");
-      }
+      await utils.NewCmix(ndf, STATE_PATH, password, "");
     },
-    [cmixPreviouslyInitialized, utils]
+    [utils]
   );
 
   const loadCmix = useCallback(
@@ -54,7 +57,6 @@ const useCmix = () => {
       );
       // Create/Load reception identity for proxxy
       const cmixId = loadedCmix.GetID();
-      console.log(`Proxxy: Cmix ID -> ${cmixId}`);
       let identity: Uint8Array;
       try {
         identity = utils.LoadReceptionIdentity(
@@ -84,7 +86,6 @@ const useCmix = () => {
         e2eParams
       );
       setE2e(e2e);
-      console.log(`Proxxy: e2eID -> ${e2e.GetID()}`);
     },
     [encodedCmixParams, utils]
   );
@@ -144,15 +145,19 @@ const useCmix = () => {
   }, [cmix, status, trackingMs]);
 
   const initialize = useCallback(
-    (encryptedPass: Uint8Array) => {
-      return initializeCmix(encryptedPass)
-        .then(() => loadCmix(encryptedPass))
-        .catch((e) => {
-          setStatus(NetworkStatus.FAILED);
-          throw e;
-        });
+    async (encryptedPass: Uint8Array) => {
+      try {
+        if (!cmixPreviouslyInitialized) {
+          await initializeCmix(encryptedPass);
+          setCmixPreviouslyInitialized(true);
+        }
+        return await loadCmix(encryptedPass);
+      } catch (e) {
+        setStatus(NetworkStatus.FAILED);
+        throw e;
+      }
     },
-    [initializeCmix, loadCmix]
+    [cmixPreviouslyInitialized, initializeCmix, loadCmix]
   );
 
   return {

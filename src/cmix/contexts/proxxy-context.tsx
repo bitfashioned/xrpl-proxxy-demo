@@ -1,11 +1,12 @@
 import useCmix, { NetworkStatus } from '../hooks/useCmix';
 import type { WithChildren } from '../types';
-import React, { FC, useCallback, useState } from 'react';
+import React, { FC, useCallback, useEffect, useState, useRef } from 'react';
 import { useUtils } from './utils-context';
 import { encoder, decoder } from '../utils';
 
 export type ProxxyClient = {
-    connect: (relay: Uint8Array) => Promise<void>;
+    ready: boolean;
+    connect: (relay: Uint8Array) => Promise<string[]>;
     supportedNetworks: () => string[];
     request: (network: string, data: Uint8Array) => Promise<any>;
 }
@@ -18,18 +19,23 @@ type ProxxyRequest = {
     recipient: Uint8Array;
     uri: string;
     method: number;
-    data: Uint8Array;
+    data?: Uint8Array;
 }
+
+const pw = encoder.encode('12345678901234567890');
 
 export const ProxxyProvider: FC<WithChildren> = ({ children }) => {
     const [networks, setNetworks] = useState<string[]>([]);
     const {
         cmix,
         e2eId,
-        status: cmixStatus
+        status: cmixStatus,
+        initialize,
     } = useCmix();
     const { utils } = useUtils();
     const [ recipient, setRecipient ] = useState<Uint8Array>();
+    const calledInit = useRef(false);
+    const [ ready, setReady ] = useState(false);
 
     // Internal
     const proxxyRequest = useCallback(async (req: ProxxyRequest): Promise<any> => {
@@ -37,20 +43,23 @@ export const ProxxyProvider: FC<WithChildren> = ({ children }) => {
         if (
             cmix &&
             utils &&
-            e2eId &&
-            cmixStatus === NetworkStatus.CONNECTED
+            e2eId !== undefined &&
+            ready
         ) {
             // Build request
             console.log('Proxxy: Building request');
+            // Encode data
+            const dataStr = req.data ? utils.Uint8ArrayToBase64(req.data) : '';
             const request = {
                 Version: 1,
-                Headers: new Uint8Array(),
-                Content: req.data,
+                Headers: '',
+                Content: dataStr,
                 Method: req.method,
                 URI: req.uri,
-                Error: "",
+                Error: '',
             };
             const reqStr = JSON.stringify(request);
+            console.log(`Proxxy: Request: ${reqStr}`);
             const reqBytes = encoder.encode(reqStr);
 
             // Send request
@@ -70,7 +79,7 @@ export const ProxxyProvider: FC<WithChildren> = ({ children }) => {
             console.log('Proxxy: Not ready');
             return null;
         }
-    }, [cmix, utils, e2eId, cmixStatus]);
+    }, [cmix, utils, e2eId, ready]);
 
     // Connect
     const connect = useCallback(async (relay: Uint8Array) => {
@@ -80,11 +89,14 @@ export const ProxxyProvider: FC<WithChildren> = ({ children }) => {
             recipient: relay,
             uri: '/networks',
             method: 1, // GET
-            data: new Uint8Array(),
         }
         const networks = await proxxyRequest(req);
-        setNetworks(networks as string[]);
-        setRecipient(relay);
+        console.log(`Proxxy: Networks: ${networks}`)
+        if (networks != null) {
+            setNetworks(networks as string[]);
+            setRecipient(relay);
+        }
+        return networks as string[];
     }, [proxxyRequest, setNetworks, setRecipient]);
 
     // Networks
@@ -107,11 +119,29 @@ export const ProxxyProvider: FC<WithChildren> = ({ children }) => {
             console.log('Proxxy: Recipient not set yet');
             return null;
         }
-    }, [proxxyRequest, setNetworks, recipient]);
+    }, [recipient, proxxyRequest]);
+
+    // Update ready
+    useEffect(() => {
+        setReady(cmixStatus === NetworkStatus.CONNECTED);
+    }, [cmixStatus]);
+
+    // Initialize cmix once
+    useEffect(() => {
+        async function initCmix() {
+            console.log('Proxxy: initializing cmix');
+            calledInit.current = true;
+            await initialize(pw);
+        }
+        if (!calledInit.current) {
+            initCmix();
+        }
+    }, [initialize]);
 
     return (
         <ProxxyContext.Provider
         value={{
+            ready,
             connect,
             supportedNetworks,
             request,

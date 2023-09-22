@@ -40,6 +40,7 @@ export type XXDKUtils = {
   GetDefaultCMixParams: () => Uint8Array;
   GetDefaultE2EParams: () => Uint8Array;
   GetDefaultSingleUseParams: () => Uint8Array;
+  Uint8ArrayToBase64: (bytes: Uint8Array) => string;
   Base64ToUint8Array: (base64: string) => Uint8Array;
   GetVersion: () => string;
   GetClientVersion: () => string;

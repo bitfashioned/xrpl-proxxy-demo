@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import {Xumm} from 'xumm'
-import { submitTx, waitFinalizedTx } from './utils'
+import { submitTx, waitFinalizedTx, RequestFn, fetchFunc } from './utils'
 import { useProxxy } from './cmix/contexts/proxxy-context'
 import { encoder } from './cmix/utils'
 import { relayContact } from './assets/relay'
+import Loading from './cmix/components/LoadingView';
 
-const nodeUrl = process.env.REACT_APP_XRPL_URL || 'https://xrplcluster.com/'
+// Use proxxy by default
+const proxxyActive = process.env.REACT_APP_PROXXY_ACTIVE || true;
+const nodeUrl = process.env.REACT_APP_XRPL_URL || 'https://xrplcluster.com/';
 
 const xumm = new Xumm(process.env.REACT_APP_XUMM_API_KEY || '') // Some API Key
 
@@ -21,7 +24,9 @@ function App() {
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState('unknown')
   const [finalized, setFinalized] = useState(false)
-  const { connect, supportedNetworks, request } = useProxxy();
+  const { ready, connect, request } = useProxxy();
+  const [ loading, setLoading ] = useState(false);
+  const calledInit = useRef(false);
   const [networks, setNetworks] = useState<string[]>([]);
 
   xumm.user.account.then(a => setAccount(a ?? ''))
@@ -32,19 +37,25 @@ function App() {
     setAccount('Friend')
   }
 
-  useEffect( () => {
+  // Connect to proxxy once, when ready
+  useEffect(() => {
     async function initProxxy() {
+        calledInit.current = true;
         // Connect to proxxy
         console.log('Proxxy: Connecting...');
-        await connect(relay);
-        console.log('Proxxy: Connected!');
-        // Get networks
-        const nets = supportedNetworks();
-        console.log('Proxxy: Networks', nets);
-        setNetworks(nets);
+        setLoading(true);
+        const networks = await connect(relay);
+        if (networks) {
+          console.log('Proxxy: Connected!');
+          setNetworks(networks);
+        } else {
+          console.log('Proxxy: Failed to connect');
+        }
     }
-    initProxxy();
-  }, [])
+    if (!calledInit.current && ready) {
+      initProxxy();
+    }
+  }, [connect, setNetworks, setLoading, ready]);
 
   const createPayload = async () => {
     const payload = await xumm.payload?.createAndSubscribe({
@@ -74,21 +85,26 @@ function App() {
     return payload
   }
 
-  const submit = async () => {
-    if (signed) {
-      const response = await xumm.payload?.get(payloadUuid)
-      setSending(true);
-      const txid = response?.response.txid || "";
-      const resp = await submitTx(nodeUrl, response?.response.hex || "")
-      if (resp) {
-        if (resp.result.accepted || resp.result.applied || resp.result.broadcast) {
-          setResult(resp.result.engine_result as string)
-          await waitFinalizedTx(nodeUrl, txid);
-          setFinalized(true);
-        }
-      }
-      return response
+  const requestFn: RequestFn = async (req: Uint8Array) => {
+    if (proxxyActive){
+      return request('/ripple/mainnet', req);
     }
+    return fetchFunc(nodeUrl, req);
+  }
+
+  const submit = async () => {
+    const response = await xumm.payload?.get(payloadUuid)
+    setSending(true);
+    const txid = response?.response.txid || "";
+    const resp = await submitTx(requestFn, response?.response.hex || "")
+    if (resp) {
+      if (resp.result.accepted || resp.result.applied || resp.result.broadcast) {
+        setResult(resp.result.engine_result as string)
+        await waitFinalizedTx(requestFn, txid);
+        setFinalized(true);
+      }
+    }
+    return response
   };
 
   return (
@@ -105,19 +121,14 @@ function App() {
           <br />
       </div>
       <div>
-        {account !== 'Friend' && qrCode === '' &&
+        {account !== 'Friend' && qrCode === '' && networks.length == 0 && (!ready || loading) && <Loading message={'Connecting to Proxxy...'} />}
+      </div>
+      <div>
+        {account !== 'Friend' && qrCode === '' && networks.length > 0 &&
           <>
             <button onClick={createPayload}>Make a payment</button>
             &nbsp;- or -&nbsp;
             <button onClick={logout}>Sign Out</button>
-          </>
-        }
-      </div>
-      <div>
-        {networks &&
-          <>
-          <br/>
-            {networks}
           </>
         }
       </div>
@@ -127,7 +138,7 @@ function App() {
       <div>
         {signed && result === 'unknown' && !sending &&
           <>
-            <button onClick={submit}>Submit Payment over cMix</button>
+            <button onClick={submit}>Submit Payment</button>
           </>
         }
       </div>

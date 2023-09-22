@@ -46,6 +46,7 @@ const WebAssemblyRunner: FC<WithChildren> = ({ children }) => {
           await isReady;
           const {
             Base64ToUint8Array,
+            Uint8ArrayToBase64,
             GetClientVersion,
             GetDefaultCMixParams,
             GetDefaultE2EParams,
@@ -75,6 +76,7 @@ const WebAssemblyRunner: FC<WithChildren> = ({ children }) => {
             GetDefaultE2EParams,
             GetDefaultSingleUseParams,
             Base64ToUint8Array,
+            Uint8ArrayToBase64,
             GetVersion,
             GetClientVersion,
             GetOrInitPassword,
