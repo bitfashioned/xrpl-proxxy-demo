@@ -1,4 +1,4 @@
-# xrpl-proxxy-demo
+# Shredexx
 
 This repo started as a fork of the Xumm SDK React Demo, found [here](https://github.com/XRPL-Labs/XummSDK-React-Demo/).
 
@@ -24,3 +24,5 @@ npm run dev
 ## Improvements
 
 The XUMM SDK interacts with the XUMM wallet backend. In order to provide maximal privacy to users, these interactions should also be sent over cMix.
+
+Major UI/UX improvements are also expected, and integration with the XRPL DEX.
